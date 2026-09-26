@@ -1,0 +1,153 @@
+{
+  "format": "yfs-worldbook-v1",
+  "name": "云梧纪事 · 上都",
+  "version": "1.0",
+  "source": "改编自黎棠时《岁除上都雪》",
+  "content_rating": "all-ages",
+  "notes": "夜来霜世界书 v1 交换格式，字段对齐 Character Card V2 的 character_book.entries，可双向映射。标注【未揭示】的条目为剧情底牌，关键词触发、逐步释放。",
+  "entries": [
+    {
+      "comment": "世界观总述",
+      "keys": [],
+      "secondary_keys": [],
+      "constant": true,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 100,
+      "position": "before_char",
+      "content": "云梧历年间，修真与人间朝廷并存。天下有宗门仙山，也有皇城官署；修士行走市井之间，凡人见怪不怪。故事基调：白话古风，烟火气与暗流并存——市井的热闹之下，永远有一层没被说破的东西。"
+    },
+    {
+      "comment": "云梧历",
+      "keys": ["云梧历", "纪年", "年号"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 95,
+      "position": "before_char",
+      "content": "架空纪年「云梧历」。当前为云梧历九年冬月，年关将至，大雪将落。"
+    },
+    {
+      "comment": "上都",
+      "keys": ["上都", "京城", "长安大街", "东市", "西市", "回春堂", "故纸堆"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 90,
+      "position": "before_char",
+      "content": "上都：王朝都城。长安大街纵贯东西；东市烟火最盛——包子铺、回春堂药铺、故纸堆书摊、巷口烤翅摊都在这一带；西市有禾弗的铁匠铺。皇城深处有密探与暗卫系统，指挥使卫峥掌其事。年关时节满城红灯笼。"
+    },
+    {
+      "comment": "九阙仙宗",
+      "keys": ["九阙仙宗", "宗门", "藏卷阁"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 88,
+      "position": "before_char",
+      "content": "九阙仙宗：辖地包含淮甫山一带的大型宗门。藏卷阁是宗门书库，书修林夕在此当值。宗门巡查定期覆盖落魂渊，但渊中组织经营已久未被扫除——高层或有人默许，此为暗线，应在长线剧情中逐步揭示。"
+    },
+    {
+      "comment": "淮甫山",
+      "keys": ["淮甫山", "渔修", "鱼塘"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 86,
+      "position": "before_char",
+      "content": "淮甫山：九阙仙宗辖地。山脚有鱼塘，外门弟子司职渔修，每日打理鱼苗、修补渔网。山居清寂，冬天自有一番景致。陈笙是其中一员，山下的镇子在东南三十里外。"
+    },
+    {
+      "comment": "落魂渊",
+      "keys": ["落魂渊", "渊底", "迷踪锁灵阵", "缚灵台"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 84,
+      "position": "before_char",
+      "content": "落魂渊：天然阴煞裂谷，谷深雾浓，阴风惨惨，时有低阶魔物游荡，也是见不得光的勾当频发之地。外围有「迷踪锁灵阵」，兼具隐匿、防御与预警。渊底有经营已久的据点：缚灵台囚人抽取灵力，注入「主炉」，以「傀种」侵蚀神智炼制傀儡；巡逻者多为傀化修士，行动依赖中央石台顶层控魂铃的指令波动。"
+    },
+    {
+      "comment": "玄珀",
+      "keys": ["玄珀", "钥匙", "黑市"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 82,
+      "position": "before_char",
+      "content": "玄珀：产自落魂渊深处的稀有矿石，与此地阴煞本源相融，能无声开启部分禁制。渊底黑市拍卖会上的珍品，持有者往往被默认为拥有进入某些核心区域的资格，因而被视为一种特殊的「钥匙」。巫医亦尹持有一枚。"
+    },
+    {
+      "comment": "死侍",
+      "keys": ["死侍", "试药", "牵机引"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 80,
+      "position": "before_char",
+      "content": "死侍：朝廷秘密试药之畜，多由死囚或拐掠之人炼成，档案除名，生死由人。天牢中官员的「突发恶疾」，偶尔与他们有关。庚七：死侍编号，身手远超预估，身负「牵机引」之毒（十二个时辰内发作），越狱后逃入落魂渊方向。"
+    },
+    {
+      "comment": "巫医",
+      "keys": ["巫医", "回春堂"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 78,
+      "position": "before_char",
+      "content": "巫医：行走于医与毒、明与暗之间的医者一脉，常与隐秘势力、地下交易接触。上都城内有名的巫医是回春堂的亦尹，尤擅解奇毒，兼为暗器师。"
+    },
+    {
+      "comment": "书修",
+      "keys": ["书修", "无许门", "故纸堆", "文书手段"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 76,
+      "position": "before_char",
+      "content": "书修：以典籍文书入道的修士一脉，擅长记忆、拓印、寻踪卦象与「文书手段」——盖了朱红印章的文书，宗门认、朝廷认。无许门是书修门派；上都故纸堆书摊的摊主林夕即无许门书修，兼在九阙仙宗藏卷阁当值。"
+    },
+    {
+      "comment": "药人",
+      "keys": ["药人"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 74,
+      "position": "before_char",
+      "content": "药人：以特殊灵木为骨、浸染百草之精、复以秘法点化的人形造物，用以试药、护圃，或执行一些不便亲自出手的指令。巫医亦尹炼有数尊，其中一尊劲装束发、剑眉星目，气息沉静，忠诚守护宛若本能。"
+    },
+    {
+      "comment": "引灵阵与主炉（未揭示）",
+      "keys": ["引灵阵", "主炉", "傀种"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 10,
+      "position": "after_char",
+      "content": "【未揭示】落魂渊组织以「引灵阵」吸干修士灵力，注入「主炉」，以「傀种」侵蚀神智炼成傀儡。此术攫取生灵魂魄本源，违逆阴阳伦常，连魔道亦不容。幕后有被称作「先生」的存在。此为长线底牌，应由剧情逐步揭示，AI 不可一次性说破。"
+    },
+    {
+      "comment": "江倖（未揭示）",
+      "keys": ["江倖", "灰袍", "棋子"],
+      "secondary_keys": [],
+      "constant": false,
+      "selective": false,
+      "enabled": true,
+      "insertion_order": 9,
+      "position": "after_char",
+      "content": "【未揭示】江倖：灰袍温润男子，黑白棋子，以棋局观世。魔族血裔，视「傀种」之术为对本族失传禁术的玷污，立场是「清理门户」。他自称替某位「先生」落子，或者是在对抗那位先生——连他自己也未必分得清。此为长线底牌，应由剧情逐步揭示，AI 不可一次性说破。"
+    }
+  ]
+}
