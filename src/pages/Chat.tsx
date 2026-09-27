@@ -19,6 +19,7 @@ import { loadSettings } from '../lib/settings';
 import { buildMessages, expandMacros, floorName } from '../lib/context';
 import { streamChat, type StreamHandle } from '../lib/llm';
 import { download } from '../lib/charcard';
+import CharacterThumb from '../components/CharacterThumb';
 
 function fmtTime(ts: number): string {
   const d = new Date(ts);
@@ -109,8 +110,11 @@ function StartPanel({
               onClick={() => setCharId(c.id)}
               title={c.creatorNotes || c.creator}
             >
-              <strong>{c.name}</strong>
-              {c.tags.length > 0 && <span className="pick-tags">{c.tags.slice(0, 3).join(' · ')}</span>}
+              <CharacterThumb name={c.name} avatar={c.avatar} size="pick" />
+              <span className="pick-text">
+                <strong>{c.name}</strong>
+                {c.tags.length > 0 && <span className="pick-tags">{c.tags.slice(0, 3).join(' · ')}</span>}
+              </span>
             </button>
           ))}
           {characters.length === 0 && <p className="muted">库中还没有角色——先去「人设工坊」导入或新建。</p>}
@@ -184,7 +188,7 @@ function StartPanel({
 
 /* ============ 右栏：卷宗 / 记忆簿 / 状态 ============ */
 
-function SidePanel({ story, open, onClose }: { story: Story; open: boolean; onClose: () => void }) {
+function SidePanel({ story, onClose }: { story: Story; onClose: () => void }) {
   const data = useAppData();
   const [tab, setTab] = useState<'卷宗' | '记忆簿' | '状态'>('记忆簿');
   const [factDraft, setFactDraft] = useState('');
@@ -244,7 +248,7 @@ function SidePanel({ story, open, onClose }: { story: Story; open: boolean; onCl
   const state = stateDraft ?? story.state;
 
   return (
-    <aside className={`chat-panel ${open ? 'open' : ''}`}>
+    <div className="sidepanel">
       <div className="panel-tabs">
         <span className="spacer" />
         {(['卷宗', '记忆簿', '状态'] as const).map((t) => (
@@ -375,8 +379,28 @@ function SidePanel({ story, open, onClose }: { story: Story; open: boolean; onCl
           ))}
         </div>
       )}
-    </aside>
+    </div>
   );
+}
+
+/** 解析模型给出的选项行：容错 A|、A：、A. 等写法；行没分行时在字母标记处补拆，最多取 3 条 */
+function parseChoices(text: string): { letter: string; text: string }[] {
+  const out: { letter: string; text: string }[] = [];
+  const lines: string[] = [];
+  for (const raw of text.split(/\n+/)) {
+    // 模型偶尔把几行挤成一行：在 B|、C| 等管道式标记前强制断行
+    const parts = raw.split(/(?=[A-Da-d]\s*[|｜])/);
+    for (const p of parts) {
+      const s = p.trim();
+      if (s) lines.push(s);
+    }
+  }
+  for (const raw of lines) {
+    const m = raw.match(/^([ABCDabcd])\s*[|｜：:.)．、。]\s*(.+)$/);
+    if (m) out.push({ letter: m[1].toUpperCase(), text: m[2].trim() });
+    if (out.length >= 3) break;
+  }
+  return out;
 }
 
 function exportStory(story: Story) {
@@ -415,11 +439,15 @@ export default function Chat() {
   const [sideOpen, setSideOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [hasKey] = useState(() => !!loadSettings().apiKey); // 页面切换会重挂载，读一次即可
+  const [suggesting, setSuggesting] = useState(false);
+  const [choices, setChoices] = useState<{ letter: string; text: string }[] | null>(null);
+  const [customDraft, setCustomDraft] = useState('');
   const floorsRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true); // 用户贴近底部时才自动跟随滚动
 
   const stories = useMemo(() => [...data.stories].sort((a, b) => b.updatedAt - a.updatedAt), [data.stories]);
   const activeStory = stories.find((s) => s.id === activeId) ?? null;
+  const activeChar = activeStory ? (data.characters.find((c) => c.id === activeStory.characterId) ?? null) : null;
   const streaming = stream?.storyId === activeId;
 
   useEffect(() => {
@@ -430,6 +458,8 @@ export default function Chat() {
     stickRef.current = true;
     const el = floorsRef.current;
     if (el) el.scrollTop = el.scrollHeight;
+    setChoices(null);
+    setCustomDraft('');
   }, [activeId]);
 
   useEffect(() => {
@@ -543,6 +573,64 @@ export default function Chat() {
     void generate(activeStory.id, '（请接着上文自然地继续推进剧情。不要重复上文内容。）');
   }
 
+  /** 讨主意：让模型荐 3 个行动选项，玩家点选或自定义 D 项填入落笔框 */
+  async function onSuggest() {
+    if (!activeStory || suggesting) return;
+    const settings = loadSettings();
+    if (!settings.apiKey) {
+      setErr('尚未配置模型连接——先去「设置」填 API Base URL 与 Key。');
+      return;
+    }
+    const latest = getData().stories.find((s) => s.id === activeStory.id);
+    if (!latest) return;
+    const character = getData().characters.find((c) => c.id === latest.characterId);
+    if (!character) {
+      setErr('这座戏楼绑定的角色卡已被删除。');
+      return;
+    }
+    const persona = getData().personas.find((p) => p.id === latest.personaId) ?? null;
+    const wbs = latest.worldbookIds
+      .map((id) => getData().worldbooks.find((w) => w.id === id))
+      .filter((w): w is Worldbook => !!w);
+    setErr('');
+    setChoices(null);
+    setSuggesting(true);
+    try {
+      const messages = buildMessages({
+        character,
+        persona,
+        worldbooks: wbs,
+        story: latest,
+        extraInstruction:
+          '（现在请跳出对戏：站在玩家立场，针对当前局面给出 3 个风格不同的下一步行动建议——一个稳妥、一个冒险、一个出人意料。每行严格按如下格式输出：\nA|行动内容\nB|行动内容\nC|行动内容\n行动内容以玩家第一人称书写、10 到 30 字、具体可执行。只输出这三行，不要编号以外的任何文字。）',
+        recentLimit: 40,
+      });
+      const handle = streamChat({
+        url: settings.baseUrl,
+        apiKey: settings.apiKey,
+        model: settings.model,
+        messages,
+        temperature: 0.8,
+        maxTokens: settings.maxTokens,
+        onDelta: () => {},
+      });
+      const result = await handle;
+      const opts = parseChoices(result.fullText);
+      if (opts.length === 0) setErr('模型没给出有效的选项——再试一次，或换个模型。');
+      else setChoices(opts);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSuggesting(false);
+    }
+  }
+
+  function adoptChoice(text: string) {
+    setDraft(text);
+    setChoices(null);
+    setCustomDraft('');
+  }
+
   function onBranch(index: number) {
     if (!activeStory) return;
     const branch = branchStory(activeStory.id, index);
@@ -565,30 +653,27 @@ export default function Chat() {
 
   return (
     <section className="page chat-page">
-      <div className="chat-toolbar">
-        <button className="btn slim" onClick={() => setSideOpen((v) => !v)}>
-          戏楼列表
-        </button>
-        {activeStory && (
-          <button className="btn slim panel-toggle" onClick={() => setPanelOpen((v) => !v)}>
-            卷宗 / 记忆 / 状态
-          </button>
-        )}
-      </div>
-
-      <div className="chat-layout">
-        {/* 左：戏楼列表 */}
-        <aside className={`chat-side ${sideOpen ? 'open' : ''}`}>
-          <button
-            className="btn primary slim"
-            onClick={() => {
-              setStarting(true);
-              setSideOpen(false);
-            }}
-          >
-            新开一局
-          </button>
-          <ul className="story-list">
+      <div className={`chat-layout ${starting || !activeStory ? 'starting' : ''}`}>
+        {/* 左：戏楼列表（抽屉） */}
+        <aside className={`drawer drawer-left ${sideOpen ? 'open' : ''}`}>
+          {sideOpen ? (
+            <div className="drawer-inner">
+              <div className="drawer-head">
+                <span>戏楼列表</span>
+                <button className="icon-btn" title="收起" onClick={() => setSideOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <button
+                className="btn primary slim"
+                onClick={() => {
+                  setStarting(true);
+                  setSideOpen(false);
+                }}
+              >
+                新开一局
+              </button>
+              <ul className="story-list">
             {stories.map((s) => (
               <li key={s.id}>
                 <button
@@ -599,10 +684,17 @@ export default function Chat() {
                     setSideOpen(false);
                   }}
                 >
-                  <strong>{s.title}</strong>
-                  <span className="muted">
-                    {s.characterName} · {fmtTime(s.updatedAt)}
-                    {s.branchedFrom ? ' · 分支' : ''}
+                  <CharacterThumb
+                    name={s.characterName}
+                    avatar={data.characters.find((c) => c.id === s.characterId)?.avatar}
+                    size="story"
+                  />
+                  <span className="story-text">
+                    <strong>{s.title}</strong>
+                    <span className="muted">
+                      {s.characterName} · {fmtTime(s.updatedAt)}
+                      {s.branchedFrom ? ' · 分支' : ''}
+                    </span>
                   </span>
                 </button>
                 <button
@@ -620,6 +712,12 @@ export default function Chat() {
               </li>
             ))}
           </ul>
+            </div>
+          ) : (
+            <button className="drawer-strip" onClick={() => setSideOpen(true)}>
+              戏楼 {stories.length} 座
+            </button>
+          )}
         </aside>
 
         {/* 中：楼层与输入 */}
@@ -629,6 +727,7 @@ export default function Chat() {
           ) : (
             <>
               <div className="chat-head">
+                <CharacterThumb name={activeStory.characterName} avatar={activeChar?.avatar} size="head" />
                 <h2>{activeStory.title}</h2>
                 <span className="muted">
                   {activeStory.characterName} × {activeStory.personaName}
@@ -668,13 +767,18 @@ export default function Chat() {
                 ))}
                 {streaming && (
                   <article className="floor assistant streaming">
-                    <header>
-                      <span className="floor-name">{activeStory.characterName}</span>
-                    </header>
-                    <p className="floor-text">
-                      {stream?.text}
-                      <span className="cursor">▍</span>
-                    </p>
+                    <span className="floor-seal">{activeStory.characterName.slice(0, 2)}</span>
+                    <div className="floor-body">
+                      <header>
+                        <span className="floor-name">{activeStory.characterName}</span>
+                      </header>
+                      <div className="floor-text">
+                        <p className="speech">
+                          {stream?.text}
+                          <span className="cursor">▍</span>
+                        </p>
+                      </div>
+                    </div>
                   </article>
                 )}
                 {activeStory.floors.length === 0 && !streaming && (
@@ -692,6 +796,33 @@ export default function Chat() {
               )}
 
               <div className="composer">
+                {choices && choices.length > 0 && (
+                  <div className="choices">
+                    {choices.map((c) => (
+                      <button key={c.letter} className="choice" onClick={() => adoptChoice(c.text)}>
+                        <i>{c.letter}</i>
+                        <span>{c.text}</span>
+                      </button>
+                    ))}
+                    <div className="choice custom">
+                      <i>D</i>
+                      <input
+                        value={customDraft}
+                        placeholder="自定一步：写你想做的事…（Enter 采纳）"
+                        onChange={(e) => setCustomDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && customDraft.trim()) adoptChoice(customDraft.trim());
+                        }}
+                      />
+                      <button className="slim-link" disabled={!customDraft.trim()} onClick={() => adoptChoice(customDraft.trim())}>
+                        用这句
+                      </button>
+                    </div>
+                    <button className="icon-btn choices-close" title="收起" onClick={() => setChoices(null)}>
+                      ×
+                    </button>
+                  </div>
+                )}
                 <textarea
                   value={draft}
                   rows={3}
@@ -708,19 +839,27 @@ export default function Chat() {
                   </label>
                   <span className="spacer" />
                   {streaming ? (
-                    <button className="btn primary" onClick={onStop}>
+                    <button className="btn" onClick={onStop}>
                       停止
                     </button>
                   ) : (
                     <>
-                      <button className="btn" onClick={onContinue} disabled={!hasKey}>
+                      <button className="slim-link" onClick={onSuggest} disabled={suggesting || !hasKey} title="让模型荐三个行动，D 可自定义">
+                        {suggesting ? '推敲中…' : '讨主意'}
+                      </button>
+                      <button className="slim-link" onClick={onContinue} disabled={!hasKey}>
                         续写
                       </button>
-                      <button className="btn" onClick={onRegen} disabled={!canRegen}>
+                      <button className="slim-link" onClick={onRegen} disabled={!canRegen}>
                         重说
                       </button>
-                      <button className="btn primary" onClick={onSend} disabled={!draft.trim()}>
-                        发送
+                      <button
+                        className="seal-btn"
+                        onClick={onSend}
+                        disabled={!draft.trim()}
+                        title="发送（Ctrl+Enter）"
+                      >
+                        落笔
                       </button>
                     </>
                   )}
@@ -730,9 +869,19 @@ export default function Chat() {
           )}
         </div>
 
-        {/* 右：卷宗 / 记忆簿 / 状态 */}
+        {/* 右：卷宗 / 记忆簿 / 状态（抽屉） */}
         {activeStory && !starting && (
-          <SidePanel story={activeStory} open={panelOpen} onClose={() => setPanelOpen(false)} />
+          <aside className={`drawer drawer-right ${panelOpen ? 'open' : ''}`}>
+            {panelOpen ? (
+              <div className="drawer-inner">
+                <SidePanel story={activeStory} onClose={() => setPanelOpen(false)} />
+              </div>
+            ) : (
+              <button className="drawer-strip" onClick={() => setPanelOpen(true)}>
+                卷宗 · 记忆 · 状态
+              </button>
+            )}
+          </aside>
         )}
       </div>
     </section>
@@ -766,40 +915,66 @@ function FloorItem({
 }) {
   return (
     <article className={`floor ${floor.role} ${floor.ooc ? 'ooc' : ''}`}>
-      <header>
-        <span className="floor-no">第 {index + 1} 层</span>
-        <span className="floor-name">{name}</span>
-        {floor.ooc && <span className="floor-flag">场外</span>}
-        {floor.interrupted && <span className="floor-flag">中断</span>}
-        <span className="spacer" />
+      <span className="floor-seal" aria-hidden="true">
+        {name.slice(0, 2)}
+      </span>
+      <div className="floor-body">
+        <header>
+          <span className="floor-name">{name}</span>
+          <span className="floor-no">第 {index + 1} 层</span>
+          {floor.ooc && <span className="floor-flag">场外</span>}
+          {floor.interrupted && <span className="floor-flag">中断</span>}
+          <span className="spacer" />
+          {editing ? (
+            <>
+              <button className="icon-btn" title="保存" onClick={onSaveEdit}>
+                存
+              </button>
+              <button className="icon-btn" title="取消" onClick={onCancelEdit}>
+                ×
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="icon-btn" title="编辑这一层" onClick={onStartEdit}>
+                改
+              </button>
+              <button className="icon-btn" title="从这层另开分支" onClick={onBranch}>
+                枝
+              </button>
+              <button className="icon-btn" title="删除这一层" onClick={onDelete}>
+                ×
+              </button>
+            </>
+          )}
+        </header>
         {editing ? (
-          <>
-            <button className="icon-btn" title="保存" onClick={onSaveEdit}>
-              存
-            </button>
-            <button className="icon-btn" title="取消" onClick={onCancelEdit}>
-              ×
-            </button>
-          </>
+          <textarea className="floor-edit" value={editDraft} rows={6} onChange={(e) => onEditDraft(e.target.value)} autoFocus />
         ) : (
-          <>
-            <button className="icon-btn" title="编辑这一层" onClick={onStartEdit}>
-              改
-            </button>
-            <button className="icon-btn" title="从这层另开分支" onClick={onBranch}>
-              枝
-            </button>
-            <button className="icon-btn" title="删除这一层" onClick={onDelete}>
-              ×
-            </button>
-          </>
+          <FloorText text={floor.content} />
         )}
-      </header>
-      {editing ? (
-        <textarea className="floor-edit" value={editDraft} rows={6} onChange={(e) => onEditDraft(e.target.value)} autoFocus />
-      ) : (
-        <p className="floor-text">{floor.content}</p>
-      )}
+      </div>
     </article>
+  );
+}
+
+/**
+ * 折子剧本排版：含引号（「『“）的段落视为对白（如唱词），
+ * 其余视为旁白环境（如小注：缩进、淡墨、稍小）。
+ */
+function FloorText({ text }: { text: string }) {
+  const paras = text
+    .split(/\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (paras.length === 0) paras.push(text.trim());
+  return (
+    <div className="floor-text">
+      {paras.map((p, i) => (
+        <p key={i} className={/「|『|“/.test(p) ? 'speech' : 'aside'}>
+          {p}
+        </p>
+      ))}
+    </div>
   );
 }

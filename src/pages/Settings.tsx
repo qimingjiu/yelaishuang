@@ -8,6 +8,7 @@ export default function Settings() {
   const [form, setForm] = useState<Settings>(() => loadSettings());
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const [models, setModels] = useState<string[] | null>(null);
   const backupRef = useRef<HTMLInputElement>(null);
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
@@ -19,24 +20,42 @@ export default function Settings() {
     setResult({ ok: true, text: '已保存到本机。' });
   }
 
+  function pickModel(id: string) {
+    const next = { ...form, model: id };
+    setForm(next);
+    saveSettings(next);
+    setResult({ ok: true, text: `已选用模型 ${id} 并保存。` });
+  }
+
   async function onTest() {
     saveSettings(form);
     setTesting(true);
     setResult(null);
+    setModels(null);
     const base = form.baseUrl.replace(/\/+$/, '');
     try {
       const res = await bridgeFetch(`${base}/models`, {
         headers: { Authorization: `Bearer ${form.apiKey}` },
       });
       if (res.ok) {
-        let count = '?';
+        let list: string[] = [];
         try {
           const data = (JSON.parse(res.body) as { data?: unknown[] }).data;
-          if (Array.isArray(data)) count = String(data.length);
+          if (Array.isArray(data)) {
+            list = data
+              .map((m) => (m && typeof m === 'object' ? (m as { id?: unknown }).id : m))
+              .filter((x): x is string => typeof x === 'string' && !!x);
+          }
         } catch {
-          // 响应体不是预期 JSON 时保留 '?'
+          // 响应体不是预期 JSON 时保持空列表
         }
-        setResult({ ok: true, text: `连接成功（HTTP ${res.status}），可用模型 ${count} 个。` });
+        if (list.length > 0) {
+          list = [...new Set(list)];
+          setModels(list);
+          setResult({ ok: true, text: `连接成功（HTTP ${res.status}），共 ${list.length} 个模型——点选一个即可使用。` });
+        } else {
+          setResult({ ok: true, text: `连接成功（HTTP ${res.status}），但未取到模型列表，请手动填写模型名称。` });
+        }
       } else {
         setResult({
           ok: false,
@@ -112,6 +131,21 @@ export default function Settings() {
             spellCheck={false}
           />
         </label>
+        {models && models.length > 0 && (
+          <div className="model-list">
+            {models.map((id) => (
+              <button
+                key={id}
+                className={`model-item ${form.model === id ? 'active' : ''}`}
+                onClick={() => pickModel(id)}
+                title="点选此模型并保存"
+              >
+                <i className="model-dot" />
+                {id}
+              </button>
+            ))}
+          </div>
+        )}
         <details className="advanced">
           <summary>高级参数（生成）</summary>
           <div className="editor-grid">
@@ -143,7 +177,7 @@ export default function Settings() {
             保存
           </button>
           <button className="btn primary" onClick={onTest} disabled={testing || !form.apiKey}>
-            {testing ? '测试中…' : '测试连接（GET /models）'}
+            {testing ? '测试中…' : '测试连接并列出模型'}
           </button>
         </div>
         {result && <p className={result.ok ? 'ok' : 'error'}>{result.text}</p>}

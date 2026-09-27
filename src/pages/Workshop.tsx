@@ -1,13 +1,22 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import type { Character, Persona, Worldbook, WorldbookEntry } from '../lib/types';
 import { deleteCharacter, deletePersona, deleteWorldbook, uid, upsertCharacter, upsertPersona, upsertWorldbook, useAppData } from '../lib/store';
-import { download, parseCardFile, toCardV2Json } from '../lib/charcard';
+import { download, fileToAvatar, parseCardFile, toCardV2Json } from '../lib/charcard';
+import CharacterThumb from '../components/CharacterThumb';
 
 /* 永久 token 粗查：中文约 0.6–0.7 token/字，2000 token ≈ 3000 字上下，此处按字符数预警 */
 function warnPermanent(c: Character): string | null {
   const chars = c.description.length + c.personality.length + c.scenario.length;
   if (chars > 3600) return `永久字段合计 ${chars} 字，约 ${Math.round(chars / 1.5)} token——超过 2000 token 红线，建议精简`;
   return null;
+}
+
+/* 名帖判词：滤掉内容包的套话标签，只留有辨识度的两三个词 */
+const BOILERPLATE = new Set(['古风', '仙侠', '全年龄', '岁除上都雪', '夜来霜项目', '改编自黎棠时《岁除上都雪》']);
+
+function verdictOf(c: Character): string {
+  const t = c.tags.filter((x) => !BOILERPLATE.has(x)).slice(0, 2).join(' · ');
+  return t || c.creator || (c.builtin ? '内置角色' : '');
 }
 
 function newCharacter(): Character {
@@ -37,6 +46,20 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
   const [form, setForm] = useState<Character>({ ...card });
   const set = <K extends keyof Character>(k: K, v: Character[K]) => setForm((f) => ({ ...f, [k]: v }));
   const warn = form.name ? warnPermanent(form) : null;
+  const avatarRef = useRef<HTMLInputElement>(null);
+  const [avatarErr, setAvatarErr] = useState('');
+
+  async function onAvatar(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setAvatarErr('');
+    try {
+      set('avatar', await fileToAvatar(file));
+    } catch {
+      setAvatarErr('这张图片读不出来，换一张试试。');
+    }
+  }
 
   function save() {
     if (!form.name.trim()) return;
@@ -64,6 +87,26 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
       </div>
       {card.id && card.builtin && <p className="muted">这是随仓库发布的内容卡，修改将另存为你的副本。</p>}
       {warn && <p className="error">{warn}</p>}
+      <div className="avatar-row">
+        <span className="avatar-preview">
+          {form.avatar ? <img src={form.avatar} alt="角色形象" /> : <i>{form.name.slice(0, 1) || '形'}</i>}
+        </span>
+        <div>
+          <span className="muted">角色形象 —— 展示在工坊与戏楼开局，不进提示词</span>
+          <div className="btn-row" style={{ marginTop: 6 }}>
+            <input ref={avatarRef} type="file" accept="image/*" hidden onChange={onAvatar} />
+            <button className="btn slim" onClick={() => avatarRef.current?.click()}>
+              上传形象…
+            </button>
+            {form.avatar && (
+              <button className="btn slim" onClick={() => set('avatar', '')}>
+                移除
+              </button>
+            )}
+          </div>
+          {avatarErr && <p className="error">{avatarErr}</p>}
+        </div>
+      </div>
       <div className="editor-grid">
         <label className="field">
           <span>名字（同时是 {'{{char}}'} 宏展开值）</span>
@@ -177,16 +220,17 @@ function CharactersTab() {
       </div>
       {error && <p className={error.endsWith('成功') ? 'ok' : 'error'}>{error}</p>}
       {editing && <CharacterEditor card={editing} onClose={() => setEditing(null)} />}
-      <ul className="lib-list">
+      <ul className="roster">
         {list.map((c) => (
           <li key={c.id}>
-            <button className="lib-item" onClick={() => setEditing({ ...c })}>
+            <button
+              className="tag-card"
+              onClick={() => setEditing({ ...c })}
+              title={`${c.builtin ? '内置 · ' : ''}${c.creator || '佚名'}\n${c.tags.join(' / ')}\n${c.creatorNotes || ''}`.trim()}
+            >
+              <CharacterThumb name={c.name} avatar={c.avatar} size="tag" />
               <strong>{c.name}</strong>
-              <span className="muted">
-                {c.builtin ? '内置 · ' : ''}
-                {c.creator || '佚名'}
-                {c.tags.length ? ` · ${c.tags.join(' / ')}` : ''}
-              </span>
+              <span className="verdict">{verdictOf(c)}</span>
             </button>
             <button className="icon-btn" title="导出 V2 JSON" onClick={() => download(`${c.name}.card.v2.json`, toCardV2Json(c))}>
               ↓
@@ -257,12 +301,15 @@ function PersonasTab() {
           </div>
         </div>
       )}
-      <ul className="lib-list">
+      <ul className="roster">
         {[...data.personas].sort((a, b) => b.updatedAt - a.updatedAt).map((p) => (
           <li key={p.id}>
-            <button className="lib-item" onClick={() => setEditing({ ...p })}>
+            <button className="tag-card" onClick={() => setEditing({ ...p })} title={p.description || '（无描述）'}>
+              <CharacterThumb name={p.name} size="tag" />
               <strong>{p.name}</strong>
-              <span className="muted">{p.description || '（无描述）'}</span>
+              <span className="verdict">
+                {p.description ? (p.description.length > 18 ? `${p.description.slice(0, 18)}…` : p.description) : '（无描述）'}
+              </span>
             </button>
             <button
               className="icon-btn"
@@ -483,14 +530,13 @@ function WorldbooksTab() {
       </div>
       {error && <p className={error.startsWith('导入成功') ? 'ok' : 'error'}>{error}</p>}
       {editing && <WorldbookEditor book={editing} onClose={() => setEditing(null)} />}
-      <ul className="lib-list">
+      <ul className="roster">
         {[...data.worldbooks].sort((a, b) => b.updatedAt - a.updatedAt).map((w) => (
           <li key={w.id}>
-            <button className="lib-item" onClick={() => setEditing({ ...w })}>
+            <button className="tag-card" onClick={() => setEditing({ ...w })} title={w.source || ''}>
+              <CharacterThumb name={w.name} size="tag" />
               <strong>{w.name}</strong>
-              <span className="muted">
-                {w.entries.length} 条{w.source ? ` · ${w.source}` : ''}
-              </span>
+              <span className="verdict">{w.entries.length} 条</span>
             </button>
             <button
               className="icon-btn"

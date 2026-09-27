@@ -131,10 +131,34 @@ async function readCardJsonFromPng(buf: ArrayBuffer): Promise<unknown> {
   throw new Error('这张 PNG 里没有嵌入角色卡数据（缺少 chara 文本块）');
 }
 
-/** 导入入口：按扩展名分发（PNG 卡 = 立绘即卡） */
+/** 图片压成角色形象 data URL（最长边 384px，webp——控制 localStorage 体积） */
+export async function fileToAvatar(source: Blob, max = 384): Promise<string> {
+  const bmp = await createImageBitmap(source);
+  try {
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * scale));
+    const h = Math.max(1, Math.round(bmp.height * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w;
+    cv.height = h;
+    const cx = cv.getContext('2d');
+    if (!cx) return '';
+    cx.drawImage(bmp, 0, 0, w, h);
+    return cv.toDataURL('image/webp', 0.82);
+  } finally {
+    bmp.close();
+  }
+}
+
+/** 导入入口：按扩展名分发（PNG 卡 = 立绘即卡，立绘一并存为角色形象） */
 export async function parseCardFile(file: File): Promise<{ card: Character; spec: string }> {
   if (/\.png$/i.test(file.name) || file.type === 'image/png') {
     const card = parseCardObject(await readCardJsonFromPng(await file.arrayBuffer()));
+    try {
+      card.avatar = await fileToAvatar(file);
+    } catch {
+      // 立绘读取失败不挡导入
+    }
     return { card, spec: 'Character Card（PNG 嵌入）' };
   }
   return { card: parseCardJson(await file.text()), spec: '' };

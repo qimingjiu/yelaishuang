@@ -36,6 +36,7 @@ export interface Character {
   creator: string;
   creatorNotes: string;
   tags: string[];
+  avatar?: string; // 角色形象（data URL，仅展示、不进提示词）
   builtin: boolean; // 来自随仓库内容包
   createdAt: number;
   updatedAt: number;
