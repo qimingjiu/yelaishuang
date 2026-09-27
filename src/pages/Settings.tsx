@@ -1,11 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState, type ChangeEvent } from 'react';
 import { bridgeFetch, isTauri } from '../lib/bridge';
 import { loadSettings, saveSettings, type Settings } from '../lib/settings';
+import { exportAll, importAll } from '../lib/store';
+import { download } from '../lib/charcard';
 
 export default function Settings() {
   const [form, setForm] = useState<Settings>(() => loadSettings());
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [testing, setTesting] = useState(false);
+  const backupRef = useRef<HTMLInputElement>(null);
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -53,6 +56,24 @@ export default function Settings() {
     }
   }
 
+  function onBackupFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    file
+      .text()
+      .then((raw) => {
+        if (!window.confirm('导入整包备份将覆盖当前全部本地数据（角色、身份、世界书、戏楼），确定继续？')) return;
+        try {
+          importAll(raw);
+          setResult({ ok: true, text: '整包备份已恢复。' });
+        } catch (err) {
+          setResult({ ok: false, text: `恢复失败：${err instanceof Error ? err.message : String(err)}` });
+        }
+      })
+      .catch(() => setResult({ ok: false, text: '读取备份文件失败。' }));
+  }
+
   return (
     <section className="page">
       <h2>设置</h2>
@@ -91,6 +112,32 @@ export default function Settings() {
             spellCheck={false}
           />
         </label>
+        <details className="advanced">
+          <summary>高级参数（生成）</summary>
+          <div className="editor-grid">
+            <label className="field">
+              <span>Temperature（0–2，越高越发散；对戏常用 0.7–1.0）</span>
+              <input
+                type="number"
+                step="0.05"
+                min="0"
+                max="2"
+                value={form.temperature}
+                onChange={(e) => update('temperature', Number(e.target.value))}
+              />
+            </label>
+            <label className="field">
+              <span>max_tokens（留空 = 交给服务商默认）</span>
+              <input
+                type="number"
+                min="1"
+                value={form.maxTokens ?? ''}
+                onChange={(e) => update('maxTokens', e.target.value ? Number(e.target.value) : null)}
+                placeholder="（默认）"
+              />
+            </label>
+          </div>
+        </details>
         <div className="btn-row">
           <button className="btn" onClick={onSave}>
             保存
@@ -100,6 +147,22 @@ export default function Settings() {
           </button>
         </div>
         {result && <p className={result.ok ? 'ok' : 'error'}>{result.text}</p>}
+      </div>
+
+      <div className="card">
+        <h3>资料备份（整包）</h3>
+        <p className="muted">
+          角色、玩家身份、世界书、全部戏楼与设置说明一次导出为 JSON；恢复时整体覆盖本机数据。换设备或卸载前建议先备份。
+        </p>
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button className="btn" onClick={() => download('yelaishuang-backup.json', exportAll())}>
+            导出全部数据
+          </button>
+          <input ref={backupRef} type="file" accept=".json,application/json" onChange={onBackupFile} hidden />
+          <button className="btn" onClick={() => backupRef.current?.click()}>
+            恢复整包备份…
+          </button>
+        </div>
       </div>
     </section>
   );
