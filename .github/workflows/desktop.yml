@@ -1,0 +1,42 @@
+name: Desktop (Tauri) Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest # NSIS / MSI
+          - os: macos-latest # Apple Silicon DMG
+          - os: macos-13 # Intel DMG
+          - os: ubuntu-22.04 # AppImage / deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies (Tauri v2)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: '夜来霜 ${{ github.ref_name }}'
+          releaseBody: '桌面安装包：Windows（NSIS/MSI）、macOS（Apple Silicon / Intel DMG）、Linux（AppImage/deb）。官方内容全年龄；软件为 BYOK 工具，使用前请阅读 README 与 docs/AGE_NOTICE.md。'
+          releaseDraft: false
+          prerelease: false

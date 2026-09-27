@@ -1,0 +1,30 @@
+{
+  "name": "yelaishuang",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "夜来霜（Overnight Frost）— 古风 AI RP 客户端：BYOK · 本地优先 · PWA + Tauri",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "gen:icon": "node scripts/gen-icon.mjs",
+    "icon": "npm run gen:icon && tauri icon app-icon.png -o src-tauri/icons",
+    "tauri": "tauri",
+    "proxy": "node tools/local-proxy.mjs"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.20.5"
+  }
+}

@@ -6,27 +6,48 @@
 
 **Overnight Frost** is an open-source, local-first, BYOK client for Chinese-style (gufeng) AI roleplay: bring your own model API key, keep your data on your own device. Ships as a PWA (installable straight from the browser) and as Tauri desktop installers on GitHub Releases. Official content is all-ages.
 
-## 特性规划
-
-- **BYOK**：自带模型 API Key，直连你选择的模型服务商；软件不提供、不中转、不存储任何模型服务。
-- **本地优先**：角色卡、世界书、聊天与存档全部保存在你自己的设备上。
-- **一份代码，两种形态**：网页版（PWA）+ 桌面安装包（Tauri），不依赖任何第三方打包服务。
-- **开放格式**：原生支持 Character Card V2（JSON / PNG）导入导出，兼容社区卡生态。
-- **古风工具箱**：称谓助手、诗词助手、年表与伏笔、取名器——对戏时不离开页面。
-
 ## 状态
 
-🚧 **早期开发中（脚手架阶段）**。当前仓库包含产品总纲、调研资料与初始内容包（角色卡 / 开局剧本 / 世界书），尚未发布可运行版本。
+🚧 **骨架已就绪**：PWA 网页版 + Tauri 桌面壳 + BYOK 连接测试 + CI（网页自动部署 / 桌面自动发布）。对戏（戏楼）、角色编辑器、世界书编辑器等核心模块尚未开工，规划见 `research/02-调研汇总与产品总纲.md`。
+
+## 下载
+
+- **网页版（PWA）**：推送 main 后由 CI 自动部署到 GitHub Pages —— <https://qimingjiu.github.io/yelaishuang/>（浏览器打开后可在地址栏「安装」为应用）
+- **桌面安装包**：向仓库推送 `v*` 标签（如 `v0.1.0`），CI 会自动构建 Windows（NSIS/MSI）、macOS（Apple Silicon / Intel DMG）、Linux（AppImage/deb）并发布到 [Releases](https://github.com/qimingjiu/yelaishuang/releases)
 
 ## 仓库内容
 
 | 路径 | 内容 |
 |---|---|
+| `src/` | 前端源码（Vite + React + TypeScript，PWA） |
+| `src-tauri/` | 桌面壳（Tauri 2 + Rust，含 `http_forward` 转发） |
+| `tools/local-proxy.mjs` | 网页版可选本地小代理 |
+| `scripts/gen-icon.mjs` | 应用图标生成脚本 |
+| `cards/` | 初始内容包（角色卡 / 开局剧本 / 世界书） |
 | `research/` | 调研笔记与产品总纲（规划基准） |
-| `cards/characters/` | 初始角色卡（Character Card V2 JSON，可直接导入 SillyTavern / RisuAI 试用） |
-| `cards/scenarios/` | 初始开局剧本（说书人模式） |
-| `cards/worldbooks/` | 初始世界书 |
 | `docs/` | 发布相关文档（年龄提示等） |
+| `.github/workflows/` | CI：网页部署 + 桌面发布 |
+
+## 开发
+
+环境要求：Node 20+（前端与打包）；Rust 稳定版工具链（仅桌面端构建需要，未安装也可只做网页端开发）。
+
+```bash
+npm install
+npm run dev           # 网页开发（http://localhost:5173）
+npm run build         # 类型检查 + 构建网页版（dist/）
+npm run icon          # 重新生成应用图标（源图 scripts/gen-icon.mjs → src-tauri/icons）
+npm run tauri dev     # 桌面端开发（需要 Rust 工具链）
+npm run tauri build   # 桌面端打包
+npm run proxy         # 启动本地小代理（网页版直连模型 API 撞 CORS 时用）
+```
+
+### CORS 与转发（BYOK 前端最先踩的坑）
+
+浏览器直连各家模型 API 会撞 CORS 墙（部分供应商禁止网页跨域调用）。本项目的解法：
+
+- **桌面端**：所有模型请求经 Tauri 的 Rust 层转发（`src-tauri/src/lib.rs` 的 `http_forward`），天然绕开 CORS；
+- **网页版**：直连，撞墙时启用本地小代理——`npm run proxy` 启动后把 API Base URL 指向 `http://127.0.0.1:38887/?target=<URL编码的上游地址>`。
 
 ## 初始内容致谢
 
