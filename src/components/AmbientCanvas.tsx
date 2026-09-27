@@ -98,7 +98,8 @@ export default function AmbientCanvas() {
     };
 
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      // DPR 上限 1.5：全屏画布在 2x 屏上像素量翻倍，是卡顿主因之一
+      const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       w = window.innerWidth;
       h = window.innerHeight;
       canvas.width = w * dpr;
@@ -158,22 +159,27 @@ export default function AmbientCanvas() {
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate((p.rot * Math.PI) / 180);
-      if (p.depth > 0.85) ctx.filter = 'blur(1px)'; // 前景掠过镜头的虚焦
       ctx.scale(scaleX, 1);
       const a = p.opacity * alphaMul;
+      // 前景花瓣：用更大更淡的外晕模拟虚焦（ctx.filter 的 blur 在大画布上极耗性能，禁用）
+      const near = p.depth > 0.85;
       ctx.beginPath();
-      petalPath(ctx, p.size * 1.3); // 水墨浸润的外晕
-      ctx.fillStyle = petalColor(p, a * 0.22);
+      petalPath(ctx, p.size * (near ? 1.7 : 1.3));
+      ctx.fillStyle = petalColor(p, a * (near ? 0.14 : 0.22));
       ctx.fill();
       ctx.beginPath();
       petalPath(ctx, p.size);
       ctx.fillStyle = petalColor(p, a);
       ctx.fill();
       ctx.restore();
-      if (ctx.filter !== 'none') ctx.filter = 'none';
     };
 
     const tick = (now: number) => {
+      // 环境动效 30fps 已足够顺滑，渲染频率减半直接省一半开销
+      if (now - last < 33) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const dt = Math.min((now - last) / 1000, 0.05);
       last = now;
       time += dt;
