@@ -178,43 +178,52 @@ export function exportAll(): string {
 /** 恢复整包备份：整体替换当前数据 */
 export function importAll(raw: string): void {
   const parsed = JSON.parse(raw) as Partial<AppData>;
-  if (!Array.isArray(parsed.characters)) throw new Error('备份文件缺少 characters 字段');
+  for (const field of ['characters', 'personas', 'worldbooks', 'stories'] as const) {
+    if (!Array.isArray(parsed[field])) throw new Error(`备份文件缺少 ${field} 字段`);
+  }
   commit({ ...emptyData(), ...parsed, version: 1 });
 }
 
-/* ---------- 首次启动：播撒内置内容 ---------- */
+/* ---------- 首次启动：播撒内置内容（每台设备只播一次） ---------- */
 
+const SEEDED_KEY = 'yfs.seeded.v1';
 let seeded = false;
 export function ensureSeeded() {
-  if (seeded || data.characters.length > 0 || data.personas.length > 0) {
-    seeded = true;
-    return;
-  }
+  if (seeded) return;
   seeded = true;
-  const now = Date.now();
-  const characters: Character[] = builtinSeed.characters.map((c) => ({
-    ...c,
-    id: uid(),
-    builtin: true,
-    createdAt: now,
-    updatedAt: now,
-  }));
-  const worldbooks: Worldbook[] = builtinSeed.worldbooks.map((w) => ({
-    ...w,
-    id: uid(),
-    createdAt: now,
-    updatedAt: now,
-    entries: w.entries.map((e) => ({ ...e, id: uid() })),
-  }));
-  const personas: Persona[] = [
-    {
-      id: uid(),
-      name: '过客',
-      description: '初到上都的旅人，身份来历可自行与说书人商定。',
-      builtin: true,
-      createdAt: now,
-      updatedAt: now,
-    },
-  ];
-  commit({ ...data, characters, worldbooks, personas });
+  try {
+    if (localStorage.getItem(SEEDED_KEY)) return;
+    // 老用户升级：库里有内容就不重复播种，只补标志
+    if (data.characters.length === 0 && data.personas.length === 0) {
+      const now = Date.now();
+      const characters: Character[] = builtinSeed.characters.map((c) => ({
+        ...c,
+        id: uid(),
+        builtin: true,
+        createdAt: now,
+        updatedAt: now,
+      }));
+      const worldbooks: Worldbook[] = builtinSeed.worldbooks.map((w) => ({
+        ...w,
+        id: uid(),
+        createdAt: now,
+        updatedAt: now,
+        entries: w.entries.map((e) => ({ ...e, id: uid() })),
+      }));
+      const personas: Persona[] = [
+        {
+          id: uid(),
+          name: '过客',
+          description: '初到上都的旅人，身份来历可自行与说书人商定。',
+          builtin: true,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ];
+      commit({ ...data, characters, worldbooks, personas });
+    }
+    localStorage.setItem(SEEDED_KEY, '1');
+  } catch {
+    // localStorage 不可用（隐私模式等）时静默跳过
+  }
 }

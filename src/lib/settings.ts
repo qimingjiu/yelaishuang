@@ -2,7 +2,8 @@ export interface Settings {
   baseUrl: string;
   apiKey: string;
   model: string;
-  temperature: number;
+  /** null = 不发送该参数，交给服务商默认（输入框清空即为此态） */
+  temperature: number | null;
   maxTokens: number | null;
 }
 

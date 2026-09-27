@@ -43,19 +43,28 @@ const server = http.createServer((req, res) => {
       }
       res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
       const full = REPLY(String(lastUser)) + (temperature !== null ? `\n（temperature=${temperature}）` : '');
-      // 故意按字节切，把汉字切成两半，验证前端跨 chunk 的 UTF-8/SSE 解析
-      const bytes = Buffer.from(full, 'utf8');
-      const cuts = [0, 9, 17, 40, 88, 130, bytes.length];
+      // 先按码点切成若干个 delta 事件，再把整条 SSE 输出（含 data: 前缀与换行）
+      // 编码成字节后按字节切割下发——切点会穿过汉字 UTF-8 序列与事件边界，
+      // 借此真正检验前端 TextDecoder(stream:true) 的跨 chunk 缓冲与 SSE 拼行。
+      const chars = Array.from(full);
+      const step = Math.max(1, Math.ceil(chars.length / 5));
+      let sse = '';
+      for (let i = 0; i < chars.length; i += step) {
+        const piece = chars.slice(i, i + step).join('');
+        sse += `data: ${JSON.stringify({ choices: [{ delta: { content: piece } }] })}\n\n`;
+      }
+      sse += 'data: [DONE]\n\n';
+      const bytes = Buffer.from(sse, 'utf8');
+      const marks = [...new Set([0, 5, 9, 17, 40, 88, 130].filter((c) => c > 0 && c < bytes.length))].sort((a, b) => a - b);
+      const cuts = [0, ...marks, bytes.length];
       let i = 0;
       const tick = () => {
-        if (i >= cuts.length - 1) {
-          res.write('data: [DONE]\n\n');
+        if (i + 1 >= cuts.length) {
           res.end();
           return;
         }
-        const piece = bytes.subarray(cuts[i], cuts[i + 1]);
+        res.write(bytes.subarray(cuts[i], cuts[i + 1]));
         i += 1;
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: piece.toString('utf8') } }] })}\n\n`);
         setTimeout(tick, 50);
       };
       tick();

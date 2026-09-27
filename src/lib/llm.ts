@@ -10,7 +10,7 @@ interface StreamChatOptions {
   apiKey: string;
   model: string;
   messages: ChatMessage[];
-  temperature?: number;
+  temperature?: number | null;
   maxTokens?: number | null;
   onDelta: (text: string) => void;
 }
@@ -146,12 +146,15 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
       const id = `s-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       type Event =
         | { type: 'delta'; text: string }
+        | { type: 'http_error'; status: number; body: string }
         | { type: 'done'; status: number }
         | { type: 'error'; message: string };
       const channel = new Channel<Event>();
       let streamError: string | null = null;
+      let httpErrorBody = '';
       channel.onmessage = (msg) => {
         if (msg.type === 'delta') emit(extractor.push(msg.text));
+        else if (msg.type === 'http_error') httpErrorBody = msg.body;
         else if (msg.type === 'error') streamError = msg.message;
       };
       cancelImpl = () => {
@@ -176,7 +179,7 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
         if (fullText) return { status: 0, fullText, interrupted: true };
         throw new Error(streamError);
       }
-      if (status !== 200) await readStatus({ status, body: '' });
+      if (status !== 200) await readStatus({ status, body: httpErrorBody });
       return { status, fullText, interrupted };
     }
 

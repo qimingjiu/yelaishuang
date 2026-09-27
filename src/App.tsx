@@ -15,12 +15,26 @@ const NAV: { id: Page; label: string; hint: string }[] = [
   { id: 'settings', label: '设置', hint: '模型连接 · 备份' },
 ];
 
+/** hash 路由：刷新 / PWA 独立窗口启动时回到上次的页面 */
+function pageFromHash(): Page {
+  const h = window.location.hash.replace(/^#\/?/, '');
+  return (NAV.some((n) => n.id === h) ? h : 'home') as Page;
+}
+
 export default function App() {
-  const [page, setPage] = useState<Page>('home');
+  const [page, setPage] = useState<Page>(pageFromHash);
 
   useEffect(() => {
     ensureSeeded(); // 首次启动播撒随仓库内容包
+    const onHash = () => setPage(pageFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
+
+  function navigate(p: Page) {
+    window.location.hash = p === 'home' ? '' : `/${p}`;
+    setPage(p);
+  }
 
   return (
     <div className="app">
@@ -37,7 +51,7 @@ export default function App() {
             <button
               key={item.id}
               className={page === item.id ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setPage(item.id)}
+              onClick={() => navigate(item.id)}
               title={item.hint}
             >
               {item.label}
@@ -46,7 +60,7 @@ export default function App() {
         </nav>
       </header>
       <main className="main">
-        {page === 'home' && <Home onNavigate={setPage} />}
+        {page === 'home' && <Home onNavigate={navigate} />}
         {page === 'chat' && <Chat />}
         {page === 'workshop' && <Workshop />}
         {page === 'settings' && <Settings />}

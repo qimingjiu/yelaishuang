@@ -116,14 +116,14 @@ export default function Settings() {
           <summary>高级参数（生成）</summary>
           <div className="editor-grid">
             <label className="field">
-              <span>Temperature（0–2，越高越发散；对戏常用 0.7–1.0）</span>
+              <span>Temperature（0–2，越高越发散；对戏常用 0.7–1.0；留空 = 不发送）</span>
               <input
                 type="number"
                 step="0.05"
                 min="0"
                 max="2"
-                value={form.temperature}
-                onChange={(e) => update('temperature', Number(e.target.value))}
+                value={form.temperature ?? ''}
+                onChange={(e) => update('temperature', e.target.value === '' ? null : Number(e.target.value))}
               />
             </label>
             <label className="field">

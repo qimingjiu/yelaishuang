@@ -16,7 +16,7 @@ const CORS = {
 
 const STRIP_REQUEST = new Set([
   'host', 'origin', 'referer', 'connection', 'keep-alive',
-  'transfer-encoding', 'upgrade', 'content-length', 'accept-encoding',
+  'transfer-encoding', 'upgrade', 'content-length', 'accept-encoding', 'cookie',
 ]);
 
 const STRIP_RESPONSE = new Set([
@@ -83,8 +83,19 @@ const server = http.createServer(async (req, res) => {
       }
     });
     res.writeHead(upstream.status, out);
-    res.end(Buffer.from(await upstream.arrayBuffer()));
+    // 逐块转发：SSE 流式回复（对戏逐字输出）原样到达客户端，不做全量缓冲
+    if (upstream.body) {
+      for await (const chunk of upstream.body) {
+        res.write(chunk);
+      }
+    }
+    res.end();
   } catch (err) {
+    if (res.headersSent) {
+      // 响应已开始，只能断开连接；客户端读到截断的流即知出错
+      res.destroy(err instanceof Error ? err : undefined);
+      return;
+    }
     res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', ...CORS });
     res.end(`上游请求失败: ${err instanceof Error ? err.message : String(err)}`);
   }

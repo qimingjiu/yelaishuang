@@ -40,7 +40,13 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
 
   function save() {
     if (!form.name.trim()) return;
-    upsertCharacter({ ...form, name: form.name.trim() });
+    // 内置卡另存为用户的独立副本（新 id、去 builtin 标记），原卡保留不动
+    const asCopy = !!card.id && card.builtin;
+    upsertCharacter({
+      ...form,
+      name: form.name.trim(),
+      ...(asCopy ? { id: '', builtin: false } : {}),
+    });
     onClose();
   }
 
@@ -475,7 +481,7 @@ function WorldbooksTab() {
           导入世界书 JSON
         </button>
       </div>
-      {error && <p className="ok">{error}</p>}
+      {error && <p className={error.startsWith('导入成功') ? 'ok' : 'error'}>{error}</p>}
       {editing && <WorldbookEditor book={editing} onClose={() => setEditing(null)} />}
       <ul className="lib-list">
         {[...data.worldbooks].sort((a, b) => b.updatedAt - a.updatedAt).map((w) => (

@@ -210,8 +210,9 @@ function SidePanel({ story, open, onClose }: { story: Story; open: boolean; onCl
     try {
       const settings = loadSettings();
       if (!settings.apiKey) throw new Error('尚未配置 API Key');
+      if (!character) throw new Error('这座戏楼绑定的角色卡已被删除，无法让 AI 总结。');
       const messages = buildMessages({
-        character: character!,
+        character,
         persona,
         worldbooks: wbs,
         story: { ...story, summary: '' },
@@ -390,7 +391,8 @@ function exportStory(story: Story) {
     '',
   ];
   story.floors.forEach((f, i) => {
-    const label = f.ooc ? '（场外）' : f.role === 'assistant' ? story.characterName : story.personaName;
+    const fallback = f.role === 'assistant' ? story.characterName : story.personaName;
+    const label = f.ooc ? `（场外）${f.name || fallback}` : f.name || fallback;
     lines.push(`## 第 ${i + 1} 层 · ${label}${f.interrupted ? '（中断）' : ''}`, '', f.content, '');
   });
   if (story.summary.trim()) lines.push('---', '', '## 前情摘要', '', story.summary.trim(), '');
@@ -412,7 +414,9 @@ export default function Chat() {
   const [editDraft, setEditDraft] = useState('');
   const [sideOpen, setSideOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [hasKey] = useState(() => !!loadSettings().apiKey); // 页面切换会重挂载，读一次即可
   const floorsRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef(true); // 用户贴近底部时才自动跟随滚动
 
   const stories = useMemo(() => [...data.stories].sort((a, b) => b.updatedAt - a.updatedAt), [data.stories]);
   const activeStory = stories.find((s) => s.id === activeId) ?? null;
@@ -423,12 +427,21 @@ export default function Chat() {
   }, [activeId]);
 
   useEffect(() => {
+    stickRef.current = true;
     const el = floorsRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [activeStory?.floors.length, stream?.text, activeId]);
+  }, [activeId]);
+
+  useEffect(() => {
+    const el = floorsRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [activeStory?.floors.length, stream?.text]);
 
   async function generate(storyId: string, extra?: string, dropLastAssistant = false) {
-    if (streamRef.current) return;
+    if (streamRef.current) {
+      setErr('另一座戏楼正在生成中——先等它说完，或点「停止」。');
+      return;
+    }
     const settings = loadSettings();
     if (!settings.apiKey) {
       setErr('尚未配置模型连接——先去「设置」填 API Base URL 与 Key。');
@@ -445,12 +458,11 @@ export default function Chat() {
     const wbs = latest.worldbookIds
       .map((id) => getData().worldbooks.find((w) => w.id === id))
       .filter((w): w is Worldbook => !!w);
-    const floors = dropLastAssistant
-      ? latest.floors.filter((f, i) => !(i === latest.floors.length - 1 && f.role === 'assistant' && !f.ooc))
-      : latest.floors;
-    if (dropLastAssistant && floors.length !== latest.floors.length) {
-      updateStory(storyId, { floors });
-    }
+    // 重说：只在内存里拿掉最后一条 AI 楼层用于组装上下文；
+    // 等请求成功拿到新文本后连同新楼层一次性写入——失败时原楼层原封不动。
+    const lastFloor = latest.floors[latest.floors.length - 1];
+    const dropped = dropLastAssistant && !!lastFloor && lastFloor.role === 'assistant' && !lastFloor.ooc;
+    const floors = dropped ? latest.floors.slice(0, -1) : latest.floors;
     const messages = buildMessages({
       character,
       persona,
@@ -474,14 +486,16 @@ export default function Chat() {
       const result = await handle;
       const text = result.fullText.trim();
       if (text) {
-        appendFloor(storyId, {
+        const floor: Floor = {
           id: uid(),
           role: 'assistant',
           name: latest.characterName,
           content: text,
           time: Date.now(),
           interrupted: result.interrupted || undefined,
-        });
+        };
+        if (dropped) updateStory(storyId, { floors: [...floors, floor] });
+        else appendFloor(storyId, floor);
       } else if (result.interrupted) {
         setErr('（已停止，这一轮没有收到内容。）');
       }
@@ -495,7 +509,11 @@ export default function Chat() {
 
   async function onSend() {
     const story = activeStory;
-    if (!story || streamRef.current) return;
+    if (!story) return;
+    if (streamRef.current) {
+      setErr('另一座戏楼正在生成中——先等它说完，或点「停止」。');
+      return;
+    }
     const text = draft.trim();
     if (!text) return;
     appendFloor(story.id, {
@@ -616,7 +634,14 @@ export default function Chat() {
                   {activeStory.characterName} × {activeStory.personaName}
                 </span>
               </div>
-              <div className="floors" ref={floorsRef}>
+              <div
+                className="floors"
+                ref={floorsRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                }}
+              >
                 {activeStory.floors.map((f, i) => (
                   <FloorItem
                     key={f.id}
@@ -688,7 +713,7 @@ export default function Chat() {
                     </button>
                   ) : (
                     <>
-                      <button className="btn" onClick={onContinue} disabled={!loadSettings().apiKey}>
+                      <button className="btn" onClick={onContinue} disabled={!hasKey}>
                         续写
                       </button>
                       <button className="btn" onClick={onRegen} disabled={!canRegen}>
