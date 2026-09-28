@@ -4,6 +4,7 @@ import { deleteCharacter, deletePersona, deleteWorldbook, getData, uid, upsertCh
 import { download, fileToAvatar, parseCardFile, toCardV2Json } from '../lib/charcard';
 import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import CharacterThumb from '../components/CharacterThumb';
+import CardWizard from '../components/CardWizard';
 
 /* 永久 token 粗查：中文约 0.6–0.7 token/字，2000 token ≈ 3000 字上下，此处按字符数预警 */
 function warnPermanent(c: Character): string | null {
@@ -197,6 +198,7 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
 function CharactersTab() {
   const data = useAppData();
   const [editing, setEditing] = useState<Character | null>(null);
+  const [wizard, setWizard] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -232,12 +234,25 @@ function CharactersTab() {
         <button className="btn primary" onClick={() => setEditing(newCharacter())}>
           新建角色
         </button>
+        <button className="btn" onClick={() => setWizard(true)} title="问答式起稿，5 分钟出第一张卡">
+          向导建卡
+        </button>
         <input ref={fileRef} type="file" accept=".json,.png,application/json,image/png" onChange={onFile} hidden />
         <button className="btn" onClick={() => fileRef.current?.click()}>
           导入角色卡（V2 JSON / PNG）
         </button>
       </div>
       {error && <p className={error.endsWith('成功') ? 'ok' : 'error'}>{error}</p>}
+      {wizard && (
+        <CardWizard
+          onClose={() => setWizard(false)}
+          onCreate={(draft) => {
+            const saved = upsertCharacter({ ...draft, builtin: false, createdAt: Date.now(), updatedAt: Date.now() } as Character);
+            setWizard(false);
+            setEditing({ ...(saved as Character) });
+          }}
+        />
+      )}
       {editing && <CharacterEditor card={editing} onClose={() => setEditing(null)} />}
       <ul className="roster">
         {list.map((c) => (

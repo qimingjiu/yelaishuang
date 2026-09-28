@@ -61,11 +61,12 @@ export function getData(): AppData {
 
 /* ---------- 角色 ---------- */
 
-export function upsertCharacter(c: Character) {
+export function upsertCharacter(c: Character): Character {
   const saved: Character = { ...c, id: c.id || uid(), updatedAt: Date.now() };
   const list = data.characters.filter((x) => x.id !== saved.id);
   list.unshift(saved);
   commit({ ...data, characters: list });
+  return saved;
 }
 
 export function deleteCharacter(id: string) {
@@ -184,45 +185,60 @@ export function importAll(raw: string): void {
   commit({ ...emptyData(), ...parsed, version: 1 });
 }
 
-/* ---------- 首次启动：播撒内置内容（每台设备只播一次） ---------- */
+/* ---------- 内置内容包播种（版本化） ----------
+ * 首次启动：播种全部内置内容 + 默认身份「过客」。
+ * 应用升级后（PACK_VERSION 提高）：只按名号补缺新增内容，不重复播种旧包。
+ * 注意：升级事件会重新带回此前被清空的内置内容——内容包更新视为显式升级。
+ */
 
-const SEEDED_KEY = 'yfs.seeded.v1';
+const SEEDED_KEY = 'yfs.seeded.v1'; // 值 = 已播撒的内容包版本
+const PACK_VERSION = 2; // v1 = 仙侠《岁除上都雪》；v2 = 增补宫廷（大雍朝）与江湖（泛江湖）题材包
+
 let seeded = false;
 export function ensureSeeded() {
   if (seeded) return;
   seeded = true;
   try {
-    if (localStorage.getItem(SEEDED_KEY)) return;
-    // 老用户升级：库里有内容就不重复播种，只补标志
-    if (data.characters.length === 0 && data.personas.length === 0) {
-      const now = Date.now();
-      const characters: Character[] = builtinSeed.characters.map((c) => ({
-        ...c,
-        id: uid(),
-        builtin: true,
-        createdAt: now,
-        updatedAt: now,
-      }));
-      const worldbooks: Worldbook[] = builtinSeed.worldbooks.map((w) => ({
+    const stored = Number(localStorage.getItem(SEEDED_KEY) ?? '0');
+    if (stored >= PACK_VERSION) return;
+    const now = Date.now();
+    const haveChar = new Set(data.characters.map((c) => c.name));
+    const newChars = builtinSeed.characters
+      .filter((c) => !haveChar.has(c.name))
+      .map((c) => ({ ...c, id: uid(), builtin: true, createdAt: now, updatedAt: now }));
+    const haveWb = new Set(data.worldbooks.map((w) => w.name));
+    const newWbs = builtinSeed.worldbooks
+      .filter((w) => !haveWb.has(w.name))
+      .map((w) => ({
         ...w,
         id: uid(),
         createdAt: now,
         updatedAt: now,
         entries: w.entries.map((e) => ({ ...e, id: uid() })),
       }));
-      const personas: Persona[] = [
-        {
-          id: uid(),
-          name: '过客',
-          description: '初到上都的旅人，身份来历可自行与说书人商定。',
-          builtin: true,
-          createdAt: now,
-          updatedAt: now,
-        },
-      ];
-      commit({ ...data, characters, worldbooks, personas });
+    const havePersona = new Set(data.personas.map((p) => p.name));
+    const newPersonas =
+      stored === 0 && data.personas.length === 0 && !havePersona.has('过客')
+        ? [
+            {
+              id: uid(),
+              name: '过客',
+              description: '初到上都的旅人，身份来历可自行与说书人商定。',
+              builtin: true,
+              createdAt: now,
+              updatedAt: now,
+            } as Persona,
+          ]
+        : [];
+    if (newChars.length || newWbs.length || newPersonas.length) {
+      commit({
+        ...data,
+        characters: [...data.characters, ...newChars],
+        worldbooks: [...data.worldbooks, ...newWbs],
+        personas: [...data.personas, ...newPersonas],
+      });
     }
-    localStorage.setItem(SEEDED_KEY, '1');
+    localStorage.setItem(SEEDED_KEY, String(PACK_VERSION));
   } catch {
     // localStorage 不可用（隐私模式等）时静默跳过
   }
