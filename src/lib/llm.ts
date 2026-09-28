@@ -19,6 +19,8 @@ export interface StreamResult {
   status: number;
   fullText: string;
   interrupted: boolean;
+  /** 服务商返回的 token 用量（有 stream_options 支持时才有） */
+  usage?: { prompt: number; completion: number };
 }
 
 export interface StreamHandle extends Promise<StreamResult> {
@@ -29,6 +31,7 @@ export interface StreamHandle extends Promise<StreamResult> {
 class SseExtractor {
   private buf = '';
   private done = false;
+  private usage: { prompt: number; completion: number } | null = null;
 
   /** 返回本次新增的文本片段 */
   push(text: string): string[] {
@@ -59,6 +62,10 @@ class SseExtractor {
     return d ? [d] : [];
   }
 
+  getUsage(): { prompt: number; completion: number } | null {
+    return this.usage;
+  }
+
   private handleLine(line: string): string | null {
     if (!line.startsWith('data:')) return null;
     const payload = line.slice(5).trim();
@@ -74,7 +81,12 @@ class SseExtractor {
     try {
       const obj = JSON.parse(json) as {
         choices?: { delta?: { content?: unknown }; message?: { content?: unknown } }[];
+        usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
       };
+      const u = obj.usage;
+      if (u && typeof u.prompt_tokens === 'number' && typeof u.completion_tokens === 'number') {
+        this.usage = { prompt: u.prompt_tokens, completion: u.completion_tokens };
+      }
       const choice = obj.choices?.[0];
       const raw = choice?.delta?.content ?? choice?.message?.content;
       return typeof raw === 'string' ? raw : null;
@@ -101,6 +113,8 @@ export function requestBody(o: Pick<StreamChatOptions, 'model' | 'messages' | 't
     model: o.model,
     messages: o.messages,
     stream: true,
+    // 让兼容端在流末回传 usage；不识别的服务商会忽略此字段
+    stream_options: { include_usage: true },
     ...(typeof o.temperature === 'number' ? { temperature: o.temperature } : {}),
     ...(o.maxTokens && o.maxTokens > 0 ? { max_tokens: o.maxTokens } : {}),
   });
@@ -139,6 +153,11 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
     }
   };
 
+  const result = (status: number, interrupted: boolean): StreamResult => {
+    const usage = extractor.getUsage();
+    return { status, fullText, interrupted, ...(usage ? { usage } : {}) };
+  };
+
   const promise = (async (): Promise<StreamResult> => {
     if (isTauri()) {
       const { invoke } = await import('@tauri-apps/api/core');
@@ -170,17 +189,17 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
       } catch (err) {
         if (interrupted || fullText) {
           emit(extractor.flush());
-          return { status: 0, fullText, interrupted: true };
+          return result(0, true);
         }
         throw friendlyNetError(err, url);
       }
       emit(extractor.flush());
       if (streamError) {
-        if (fullText) return { status: 0, fullText, interrupted: true };
+        if (fullText) return result(0, true);
         throw new Error(streamError);
       }
       if (status !== 200) await readStatus({ status, body: httpErrorBody });
-      return { status, fullText, interrupted };
+      return result(status, interrupted);
     }
 
     // 网页端：fetch 流式读取
@@ -193,7 +212,7 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
     try {
       res = await fetch(url, { method: 'POST', headers, body, signal: controller.signal });
     } catch (err) {
-      if (interrupted) return { status: 0, fullText, interrupted: true };
+      if (interrupted) return result(0, true);
       throw friendlyNetError(err, url);
     }
     status = res.status;
@@ -215,7 +234,7 @@ export function streamChat(o: StreamChatOptions): StreamHandle {
       if (!interrupted) throw friendlyNetError(err, url);
       emit(extractor.flush());
     }
-    return { status, fullText, interrupted };
+    return result(status, interrupted);
   })();
 
   const handle = promise as StreamHandle;

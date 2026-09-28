@@ -70,6 +70,14 @@ export interface StoryState {
   extras: string; // 伤势 / 物品等重要事项
 }
 
+/** 文风偏好（总纲第八节 P0 文风控制）：随戏楼存档，每轮生成注入 */
+export interface StoryStyle {
+  register: number; // 语体：0 日常白话 · 1 白话古风 · 2 文白相间 · 3 偏文言
+  dialogue: number; // 配比：0 多对话 · 1 均衡 · 2 多描写
+  length: number; // 篇幅：0 短 · 1 中 · 2 长
+  pace: number; // 推进：0 慢炖 · 1 均衡 · 2 快进
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -82,6 +90,7 @@ export interface Story {
   keyFacts: string[]; // 记忆簿：锁定的关键事实
   summary: string; // 记忆簿：阶段摘要（可编辑）
   state: StoryState;
+  style?: StoryStyle; // 文风偏好（无则均衡默认）
   branchedFrom?: { storyId: string; floorIndex: number };
   createdAt: number;
   updatedAt: number;

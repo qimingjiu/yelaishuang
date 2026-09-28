@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { Character, Floor, Persona, Story, Worldbook } from '../lib/types';
 import {
   appendFloor,
@@ -16,9 +16,10 @@ import {
   useAppData,
 } from '../lib/store';
 import { loadSettings } from '../lib/settings';
-import { buildMessages, expandMacros, floorName } from '../lib/context';
+import { buildMessages, defaultStyle, expandMacros, floorName, styleInstruction } from '../lib/context';
 import { streamChat, type StreamHandle } from '../lib/llm';
 import { download } from '../lib/charcard';
+import { recordUsage } from '../lib/usage';
 import CharacterThumb from '../components/CharacterThumb';
 
 function fmtTime(ts: number): string {
@@ -190,7 +191,7 @@ function StartPanel({
 
 function SidePanel({ story, onClose }: { story: Story; onClose: () => void }) {
   const data = useAppData();
-  const [tab, setTab] = useState<'卷宗' | '记忆簿' | '状态'>('记忆簿');
+  const [tab, setTab] = useState<'卷宗' | '文风' | '记忆簿' | '状态'>('记忆簿');
   const [factDraft, setFactDraft] = useState('');
   const [summaryDraft, setSummaryDraft] = useState<string | null>(null);
   const [stateDraft, setStateDraft] = useState<Story['state'] | null>(null);
@@ -234,6 +235,7 @@ function SidePanel({ story, onClose }: { story: Story; onClose: () => void }) {
         onDelta: () => {},
       });
       const result = await handle;
+      recordUsage(result.usage ?? null);
       if (result.fullText.trim()) {
         updateStory(story.id, { summary: result.fullText.trim() });
         setSummaryDraft(null);
@@ -251,7 +253,7 @@ function SidePanel({ story, onClose }: { story: Story; onClose: () => void }) {
     <div className="sidepanel">
       <div className="panel-tabs">
         <span className="spacer" />
-        {(['卷宗', '记忆簿', '状态'] as const).map((t) => (
+        {(['卷宗', '文风', '记忆簿', '状态'] as const).map((t) => (
           <button key={t} className={tab === t ? 'panel-tab active' : 'panel-tab'} onClick={() => setTab(t)}>
             {t}
           </button>
@@ -283,6 +285,36 @@ function SidePanel({ story, onClose }: { story: Story; onClose: () => void }) {
           <button className="btn" onClick={() => exportStory(story)}>
             导出戏录（Markdown）
           </button>
+        </div>
+      )}
+
+      {tab === '文风' && (
+        <div className="panel-body">
+          <p className="muted">这座戏楼的文风偏好，随存档保存，每轮生成时注入提示词。</p>
+          <StyleRow
+            label="语体"
+            options={['日常白话', '白话古风', '文白相间', '偏文言']}
+            value={(story.style ?? defaultStyle).register}
+            onChange={(v) => updateStory(story.id, { style: { ...(story.style ?? defaultStyle), register: v } })}
+          />
+          <StyleRow
+            label="对话与描写"
+            options={['多对话', '均衡', '多描写']}
+            value={(story.style ?? defaultStyle).dialogue}
+            onChange={(v) => updateStory(story.id, { style: { ...(story.style ?? defaultStyle), dialogue: v } })}
+          />
+          <StyleRow
+            label="篇幅"
+            options={['短', '中', '长']}
+            value={(story.style ?? defaultStyle).length}
+            onChange={(v) => updateStory(story.id, { style: { ...(story.style ?? defaultStyle), length: v } })}
+          />
+          <StyleRow
+            label="推进"
+            options={['慢炖', '均衡', '快进']}
+            value={(story.style ?? defaultStyle).pace}
+            onChange={(v) => updateStory(story.id, { style: { ...(story.style ?? defaultStyle), pace: v } })}
+          />
         </div>
       )}
 
@@ -403,6 +435,31 @@ function parseChoices(text: string): { letter: string; text: string }[] {
   return out;
 }
 
+function StyleRow({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div className="style-row">
+      <span className="style-label">{label}</span>
+      <div className="seg">
+        {options.map((o, i) => (
+          <button key={o} className={i === value ? 'seg-btn active' : 'seg-btn'} onClick={() => onChange(i)}>
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function exportStory(story: Story) {
   const lines: string[] = [
     `# 《${story.title}》`,
@@ -438,6 +495,7 @@ export default function Chat() {
   const [editDraft, setEditDraft] = useState('');
   const [sideOpen, setSideOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const [hasKey] = useState(() => !!loadSettings().apiKey); // 页面切换会重挂载，读一次即可
   const [suggesting, setSuggesting] = useState(false);
   const [choices, setChoices] = useState<{ letter: string; text: string }[] | null>(null);
@@ -498,7 +556,7 @@ export default function Chat() {
       persona,
       worldbooks: wbs,
       story: { ...latest, floors },
-      extraInstruction: extra,
+      extraInstruction: [styleInstruction(latest.style), extra].filter(Boolean).join('\n'),
     });
     setErr('');
     setStream({ storyId, text: '' });
@@ -514,6 +572,7 @@ export default function Chat() {
       });
       streamRef.current = handle;
       const result = await handle;
+      recordUsage(result.usage ?? null);
       const text = result.fullText.trim();
       if (text) {
         const floor: Floor = {
@@ -615,6 +674,7 @@ export default function Chat() {
         onDelta: () => {},
       });
       const result = await handle;
+      recordUsage(result.usage ?? null);
       const opts = parseChoices(result.fullText);
       if (opts.length === 0) setErr('模型没给出有效的选项——再试一次，或换个模型。');
       else setChoices(opts);
@@ -732,6 +792,14 @@ export default function Chat() {
                 <span className="muted">
                   {activeStory.characterName} × {activeStory.personaName}
                 </span>
+                <span className="spacer" />
+                <input
+                  className="floor-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="检索楼层…"
+                  spellCheck={false}
+                />
               </div>
               <div
                 className="floors"
@@ -741,30 +809,42 @@ export default function Chat() {
                   stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
                 }}
               >
-                {activeStory.floors.map((f, i) => (
-                  <FloorItem
-                    key={f.id}
-                    floor={f}
-                    index={i}
-                    name={floorName(f, activeStory)}
-                    editing={editingId === f.id}
-                    editDraft={editDraft}
-                    onEditDraft={setEditDraft}
-                    onStartEdit={() => {
-                      setEditingId(f.id);
-                      setEditDraft(f.content);
-                    }}
-                    onSaveEdit={() => {
-                      if (editingId) updateFloor(activeStory.id, editingId, { content: editDraft });
-                      setEditingId(null);
-                    }}
-                    onCancelEdit={() => setEditingId(null)}
-                    onDelete={() => {
-                      if (window.confirm('删除这一层？')) deleteFloor(activeStory.id, f.id);
-                    }}
-                    onBranch={() => onBranch(i)}
-                  />
-                ))}
+                {(() => {
+                  const q = query.trim();
+                  const list = activeStory.floors
+                    .map((f, i) => ({ f, i }))
+                    .filter(({ f }) => !q || f.content.includes(q));
+                  return (
+                    <>
+                      {q && <p className="muted center">「{q}」命中 {list.length} 层</p>}
+                      {list.map(({ f, i }) => (
+                        <FloorItem
+                          key={f.id}
+                          floor={f}
+                          index={i}
+                          mark={q}
+                          name={floorName(f, activeStory)}
+                          editing={editingId === f.id}
+                          editDraft={editDraft}
+                          onEditDraft={setEditDraft}
+                          onStartEdit={() => {
+                            setEditingId(f.id);
+                            setEditDraft(f.content);
+                          }}
+                          onSaveEdit={() => {
+                            if (editingId) updateFloor(activeStory.id, editingId, { content: editDraft });
+                            setEditingId(null);
+                          }}
+                          onCancelEdit={() => setEditingId(null)}
+                          onDelete={() => {
+                            if (window.confirm('删除这一层？')) deleteFloor(activeStory.id, f.id);
+                          }}
+                          onBranch={() => onBranch(i)}
+                        />
+                      ))}
+                    </>
+                  );
+                })()}
                 {streaming && (
                   <article className="floor assistant streaming">
                     <span className="floor-seal">{activeStory.characterName.slice(0, 2)}</span>
@@ -892,6 +972,7 @@ function FloorItem({
   floor,
   index,
   name,
+  mark,
   editing,
   editDraft,
   onEditDraft,
@@ -904,6 +985,7 @@ function FloorItem({
   floor: Floor;
   index: number;
   name: string;
+  mark?: string;
   editing: boolean;
   editDraft: string;
   onEditDraft: (v: string) => void;
@@ -951,7 +1033,7 @@ function FloorItem({
         {editing ? (
           <textarea className="floor-edit" value={editDraft} rows={6} onChange={(e) => onEditDraft(e.target.value)} autoFocus />
         ) : (
-          <FloorText text={floor.content} />
+          <FloorText text={floor.content} mark={mark} />
         )}
       </div>
     </article>
@@ -961,8 +1043,10 @@ function FloorItem({
 /**
  * 折子剧本排版：含引号（「『“）的段落视为对白（如唱词），
  * 其余视为旁白环境（如小注：缩进、淡墨、稍小）。
+ * mark：检索词高亮。
  */
-function FloorText({ text }: { text: string }) {
+function FloorText({ text, mark }: { text: string; mark?: string }) {
+  const q = (mark ?? '').trim();
   const paras = text
     .split(/\n+/)
     .map((s) => s.trim())
@@ -972,9 +1056,20 @@ function FloorText({ text }: { text: string }) {
     <div className="floor-text">
       {paras.map((p, i) => (
         <p key={i} className={/「|『|“/.test(p) ? 'speech' : 'aside'}>
-          {p}
+          {q ? marked(p, q) : p}
         </p>
       ))}
     </div>
   );
+}
+
+/** 检索命中包 <mark>；split 保留空段避免相邻命中粘连 */
+function marked(text: string, q: string): ReactNode[] {
+  const parts = text.split(q);
+  const out: React.ReactNode[] = [];
+  parts.forEach((p, i) => {
+    if (i > 0) out.push(<mark key={`m${i}`}>{q}</mark>);
+    if (p) out.push(p);
+  });
+  return out;
 }

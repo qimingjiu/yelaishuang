@@ -3,6 +3,7 @@ import { isTauri } from '../lib/bridge';
 import { loadSettings, type Settings } from '../lib/settings';
 import { getLastStoryId, useAppData } from '../lib/store';
 import BranchInk from '../components/BranchInk';
+import CharacterThumb from '../components/CharacterThumb';
 
 export default function Home({ onNavigate }: { onNavigate: (p: 'settings' | 'chat' | 'workshop') => void }) {
   const [env, setEnv] = useState('检测中…');
@@ -18,6 +19,7 @@ export default function Home({ onNavigate }: { onNavigate: (p: 'settings' | 'cha
 
   const lastStory = data.stories.find((s) => s.id === getLastStoryId()) ?? data.stories[0] ?? null;
   const storyCount = data.stories.length;
+  const recentChars = [...data.characters].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 4);
 
   return (
     <section className="page">
@@ -67,6 +69,26 @@ export default function Home({ onNavigate }: { onNavigate: (p: 'settings' | 'cha
               进工坊打理 →
             </button>
           </div>
+
+          {recentChars.length > 0 && (
+            <div className="recent">
+              <span className="recent-label">最近角色</span>
+              {recentChars.map((c) => (
+                <button
+                  key={c.id}
+                  className="recent-char"
+                  title="到工坊查看与编辑"
+                  onClick={() => {
+                    sessionStorage.setItem('yfs.openChar', c.id);
+                    onNavigate('workshop');
+                  }}
+                >
+                  <CharacterThumb name={c.name} avatar={c.avatar} size="story" />
+                  <span>{c.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
 
           <div className="utils">
             <span>

@@ -3,6 +3,7 @@ import { bridgeFetch, isTauri } from '../lib/bridge';
 import { loadSettings, saveSettings, type Settings } from '../lib/settings';
 import { exportAll, importAll } from '../lib/store';
 import { download } from '../lib/charcard';
+import { getUsage, resetUsage } from '../lib/usage';
 
 export default function Settings() {
   const [form, setForm] = useState<Settings>(() => loadSettings());
@@ -10,6 +11,7 @@ export default function Settings() {
   const [testing, setTesting] = useState(false);
   const [models, setModels] = useState<string[] | null>(null);
   const backupRef = useRef<HTMLInputElement>(null);
+  const [usage, setUsage] = useState(() => getUsage());
 
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -181,6 +183,31 @@ export default function Settings() {
           </button>
         </div>
         {result && <p className={result.ok ? 'ok' : 'error'}>{result.text}</p>}
+      </div>
+
+      <div className="card">
+        <h3>用量（本机累计）</h3>
+        <p className="muted">
+          每轮对戏、摘要与选项的 token 用量；服务商返回 usage 才计入 tokens,未返回的只计次数。
+        </p>
+        <p className="usage-line">
+          调用 <strong>{usage.calls}</strong> 次 · 提示 <strong>{usage.prompt.toLocaleString()}</strong> · 补全{' '}
+          <strong>{usage.completion.toLocaleString()}</strong> tokens
+          {usage.uncounted > 0 && <span className="muted">（另有 {usage.uncounted} 次未返回用量）</span>}
+        </p>
+        <div className="btn-row" style={{ marginTop: 8 }}>
+          <button
+            className="btn"
+            onClick={() => {
+              if (window.confirm('清空本机的用量累计？')) {
+                resetUsage();
+                setUsage(getUsage());
+              }
+            }}
+          >
+            清零
+          </button>
+        </div>
       </div>
 
       <div className="card">

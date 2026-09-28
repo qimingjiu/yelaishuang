@@ -312,6 +312,63 @@ body.gusting .act-branch {
   color: var(--muted);
 }
 
+/* 最近角色 */
+.recent {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.recent-label {
+  font-size: 13px;
+  letter-spacing: 0.22em;
+  color: var(--ink);
+}
+
+.recent-char {
+  appearance: none;
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  color: var(--ink-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s ease;
+}
+
+.recent-char:hover {
+  color: var(--fei);
+}
+
+.recent-char .lib-thumb {
+  width: 30px;
+  height: 30px;
+}
+
+.recent-char .lib-thumb.placeholder i {
+  font-size: 13px;
+}
+
+/* 用量 */
+.usage-line {
+  font-size: 14px;
+  color: var(--ink-2);
+  margin: 10px 0 0;
+}
+
+.usage-line strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* 工具行：极细文字链接 */
 .utils {
   margin-top: auto;
@@ -1446,6 +1503,82 @@ code {
 
 .panel-close {
   display: none;
+}
+
+/* 文风偏好（分段选择） */
+.style-row {
+  margin: 12px 0;
+}
+
+.style-label {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.seg-btn {
+  appearance: none;
+  border: none;
+  border-right: 1px solid var(--hairline);
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  background: none;
+  flex: 1;
+  padding: 7px 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.seg-btn:last-child {
+  border-right: none;
+}
+
+.seg-btn:hover {
+  color: var(--fei);
+}
+
+.seg-btn.active {
+  background: var(--qian);
+  color: #f8f1ea;
+}
+
+/* 楼层检索 */
+.floor-search {
+  flex: none;
+  width: 150px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--hairline);
+  border-radius: 3px;
+  padding: 5px 10px;
+  outline: none;
+  transition: border-color 0.15s ease, width 0.2s ease;
+}
+
+.floor-search:focus {
+  border-color: var(--fei);
+  width: 200px;
+}
+
+.floor-text mark {
+  background: rgba(182, 94, 96, 0.22);
+  color: inherit;
+  padding: 0 1px;
+  border-radius: 2px;
 }
 
 .panel-body h4 {

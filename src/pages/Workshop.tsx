@@ -1,7 +1,8 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import type { Character, Persona, Worldbook, WorldbookEntry } from '../lib/types';
-import { deleteCharacter, deletePersona, deleteWorldbook, uid, upsertCharacter, upsertPersona, upsertWorldbook, useAppData } from '../lib/store';
+import { deleteCharacter, deletePersona, deleteWorldbook, getData, uid, upsertCharacter, upsertPersona, upsertWorldbook, useAppData } from '../lib/store';
 import { download, fileToAvatar, parseCardFile, toCardV2Json } from '../lib/charcard';
+import { clearDraft, loadDraft, saveDraft } from '../lib/draft';
 import CharacterThumb from '../components/CharacterThumb';
 
 /* 永久 token 粗查：中文约 0.6–0.7 token/字，2000 token ≈ 3000 字上下，此处按字符数预警 */
@@ -43,11 +44,18 @@ function newCharacter(): Character {
 /* ============ 角色编辑器 ============ */
 
 function CharacterEditor({ card, onClose }: { card: Character; onClose: () => void }) {
-  const [form, setForm] = useState<Character>({ ...card });
+  const draftKey = `char.${card.id || 'new'}`;
+  const [form, setForm] = useState<Character>(() => loadDraft<Character>(draftKey)?.data ?? { ...card });
+  const [draftRestored] = useState(() => loadDraft(draftKey) !== null);
   const set = <K extends keyof Character>(k: K, v: Character[K]) => setForm((f) => ({ ...f, [k]: v }));
   const warn = form.name ? warnPermanent(form) : null;
   const avatarRef = useRef<HTMLInputElement>(null);
   const [avatarErr, setAvatarErr] = useState('');
+
+  useEffect(() => {
+    const t = window.setTimeout(() => saveDraft(draftKey, form), 400);
+    return () => window.clearTimeout(t);
+  }, [draftKey, form]);
 
   async function onAvatar(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -70,6 +78,7 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
       name: form.name.trim(),
       ...(asCopy ? { id: '', builtin: false } : {}),
     });
+    clearDraft(draftKey);
     onClose();
   }
 
@@ -85,6 +94,7 @@ function CharacterEditor({ card, onClose }: { card: Character; onClose: () => vo
           收起
         </button>
       </div>
+      {draftRestored && <p className="ok">已恢复上次未保存的草稿（改动会自动暂存）。</p>}
       {card.id && card.builtin && <p className="muted">这是随仓库发布的内容卡，修改将另存为你的副本。</p>}
       {warn && <p className="error">{warn}</p>}
       <div className="avatar-row">
@@ -190,6 +200,15 @@ function CharactersTab() {
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // 首页「最近角色」点名：直接展开对应编辑器
+  useEffect(() => {
+    const id = sessionStorage.getItem('yfs.openChar');
+    if (!id) return;
+    sessionStorage.removeItem('yfs.openChar');
+    const c = getData().characters.find((x) => x.id === id);
+    if (c) setEditing({ ...c });
+  }, []);
+
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -248,6 +267,21 @@ function CharactersTab() {
 function PersonasTab() {
   const data = useAppData();
   const [editing, setEditing] = useState<Persona | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const draftKey = editing ? `persona.${editing.id || 'new'}` : '';
+
+  useEffect(() => {
+    if (!editing) return;
+    const t = window.setTimeout(() => saveDraft(draftKey, editing), 400);
+    return () => window.clearTimeout(t);
+  }, [draftKey, editing]);
+
+  function openPersona(p: Persona) {
+    const draft = loadDraft<Persona>(`persona.${p.id || 'new'}`);
+    setDraftRestored(draft !== null);
+    setEditing(draft?.data ?? { ...p });
+  }
 
   return (
     <div>
@@ -255,7 +289,7 @@ function PersonasTab() {
         <button
           className="btn primary"
           onClick={() =>
-            setEditing({ id: '', name: '', description: '', builtin: false, createdAt: Date.now(), updatedAt: Date.now() })
+            openPersona({ id: '', name: '', description: '', builtin: false, createdAt: Date.now(), updatedAt: Date.now() })
           }
         >
           新建身份
@@ -270,6 +304,7 @@ function PersonasTab() {
               收起
             </button>
           </div>
+          {draftRestored && <p className="ok">已恢复上次未保存的草稿（改动会自动暂存）。</p>}
           <label className="field">
             <span>名号</span>
             <input
@@ -293,6 +328,7 @@ function PersonasTab() {
               disabled={!editing.name.trim()}
               onClick={() => {
                 upsertPersona({ ...editing, name: editing.name.trim() });
+                clearDraft(draftKey);
                 setEditing(null);
               }}
             >
@@ -304,7 +340,7 @@ function PersonasTab() {
       <ul className="roster">
         {[...data.personas].sort((a, b) => b.updatedAt - a.updatedAt).map((p) => (
           <li key={p.id}>
-            <button className="tag-card" onClick={() => setEditing({ ...p })} title={p.description || '（无描述）'}>
+            <button className="tag-card" onClick={() => openPersona(p)} title={p.description || '（无描述）'}>
               <CharacterThumb name={p.name} size="tag" />
               <strong>{p.name}</strong>
               <span className="verdict">
@@ -334,13 +370,21 @@ function newEntry(): WorldbookEntry {
 }
 
 function WorldbookEditor({ book, onClose }: { book: Worldbook; onClose: () => void }) {
-  const [form, setForm] = useState<Worldbook>({ ...book });
+  const draftKey = `wb.${book.id || 'new'}`;
+  const [form, setForm] = useState<Worldbook>(() => loadDraft<Worldbook>(draftKey)?.data ?? { ...book });
+  const [draftRestored] = useState(() => loadDraft(draftKey) !== null);
   const setEntry = (i: number, patch: Partial<WorldbookEntry>) =>
     setForm((f) => ({ ...f, entries: f.entries.map((e, j) => (j === i ? { ...e, ...patch } : e)) }));
+
+  useEffect(() => {
+    const t = window.setTimeout(() => saveDraft(draftKey, form), 400);
+    return () => window.clearTimeout(t);
+  }, [draftKey, form]);
 
   function save() {
     if (!form.name.trim()) return;
     upsertWorldbook({ ...form, name: form.name.trim() });
+    clearDraft(draftKey);
     onClose();
   }
 
@@ -356,6 +400,7 @@ function WorldbookEditor({ book, onClose }: { book: Worldbook; onClose: () => vo
           收起
         </button>
       </div>
+      {draftRestored && <p className="ok">已恢复上次未保存的草稿（改动会自动暂存）。</p>}
       <div className="editor-grid">
         <label className="field">
           <span>世界书名</span>

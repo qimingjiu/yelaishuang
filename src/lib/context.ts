@@ -3,7 +3,20 @@
  * 稳定角色设定 → 世界规则（世界书）→ 本局关键事实 → 当前状态 → 阶段摘要 → 最近对话。
  * 世界书回答"背景规则是什么"，记忆簿回答"发生过什么"，状态栏回答"此刻什么情况"。
  */
-import type { Character, Floor, Persona, Story, Worldbook } from './types';
+import type { Character, Floor, Persona, Story, StoryStyle, Worldbook } from './types';
+
+export const defaultStyle: StoryStyle = { register: 1, dialogue: 1, length: 1, pace: 1 };
+
+/** 文风偏好 → 注入提示词的演出指令（置于 extraInstruction 段，权重靠后） */
+export function styleInstruction(style?: StoryStyle): string {
+  if (!style) return '';
+  const clamp = (v: number, max: number) => Math.max(0, Math.min(max, Math.round(v)));
+  const REG = ['日常白话，用词浅近', '白话古风，雅而不涩', '文白相间，叙述可偏文言', '偏文言，用字雅驯'];
+  const DIA = ['多写对话，让人物多说', '对话与动作描写均衡', '多写动作与环境描写，对话精炼'];
+  const LEN = ['每轮约 150 字，短促利落', '每轮约 300 字', '每轮 500 字上下，从容铺陈'];
+  const PACE = ['节奏放慢，细写日常与情绪', '按剧情自然推进', '节奏加快，多推进事件、少写过渡'];
+  return `（文风要求：${REG[clamp(style.register, 3)]}；${DIA[clamp(style.dialogue, 2)]}；${LEN[clamp(style.length, 2)]}；${PACE[clamp(style.pace, 2)]}。）`;
+}
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
